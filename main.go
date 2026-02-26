@@ -10,10 +10,11 @@ import (
 )
 
 type Message struct {
-	Type   string `json:"type"`
-	RoomID string `json:"roomId,omitempty"`
-	Sender string `json:"sender,omitempty"`
-	Text   string `json:"text,omitempty"`
+	Type     string `json:"type"`
+	RoomID   string `json:"roomId,omitempty"`
+	Sender   string `json:"sender,omitempty"`
+	Text     string `json:"text,omitempty"`
+	IsTyping bool   `json:"isTyping,omitempty"`
 }
 
 var upgrader = websocket.Upgrader{
@@ -70,6 +71,9 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 
 		case "sendMessage":
 			handleSendMessage(ws, msg)
+
+		case "typing":
+			handleTyping(ws, msg)
 		}
 	}
 }
@@ -167,6 +171,24 @@ func sendUserList() {
 		err := client.WriteMessage(websocket.TextMessage, data)
 		if err != nil {
 			log.Println("UserList send error:", err)
+		}
+	}
+}
+
+func handleTyping(ws *websocket.Conn, msg Message) {
+	mutex.Lock()
+	room := rooms[msg.RoomID]
+	mutex.Unlock()
+
+	if room == nil {
+		return
+	}
+
+	data, _ := json.Marshal(msg)
+
+	for client := range room {
+		if client != ws {
+			client.WriteMessage(websocket.TextMessage, data)
 		}
 	}
 }
