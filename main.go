@@ -1,194 +1,235 @@
 package main
 
 import (
-	"encoding/json"
 	"log"
 	"net/http"
-	"sync"
 
-	"github.com/gorilla/websocket"
+	"backend-chat-go/config"
+	"backend-chat-go/handlers"
+	"backend-chat-go/middleware"
 )
 
-type Message struct {
-	Type     string `json:"type"`
-	RoomID   string `json:"roomId,omitempty"`
-	Sender   string `json:"sender,omitempty"`
-	Text     string `json:"text,omitempty"`
-	IsTyping bool   `json:"isTyping,omitempty"`
-}
-
-var upgrader = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool {
-		return true
-	},
-}
-
-var clients = make(map[*websocket.Conn]string)
-
-// 🔥 rooms pakai map supaya tidak duplicate
-var rooms = make(map[string]map[*websocket.Conn]bool)
-
-var mutex = &sync.Mutex{}
-
 func main() {
-	http.HandleFunc("/ws", handleConnections)
+
+	config.InitMongo()
+
+	http.HandleFunc("/register", handlers.Register)
+	http.HandleFunc("/login", handlers.Login)
+	http.HandleFunc("/messages", middleware.JWTMiddleware(handlers.GetMessages))
+	http.HandleFunc("/ws", handlers.WsHandler)
 
 	log.Println("🚀 Server running on :3000")
 	log.Fatal(http.ListenAndServe(":3000", nil))
 }
 
-func handleConnections(w http.ResponseWriter, r *http.Request) {
-	ws, err := upgrader.Upgrade(w, r, nil)
-	if err != nil {
-		log.Println("Upgrade error:", err)
-		return
-	}
+// package main
 
-	log.Println("🔥 New client connected")
+// import (
+// 	"context"
+// 	"encoding/json"
 
-	defer func() {
-		removeClient(ws)
-		ws.Close()
-		log.Println("❌ Client disconnected")
-	}()
+// 	// "go/token"
+// 	"log"
+// 	// "maps"
+// 	"net/http"
+// 	"sync"
+// 	"time"
 
-	for {
-		var msg Message
-		err := ws.ReadJSON(&msg)
-		if err != nil {
-			break
-		}
+// 	"github.com/golang-jwt/jwt/v5"
+// 	"github.com/gorilla/websocket"
+// 	"go.mongodb.org/mongo-driver/bson"
+// 	"go.mongodb.org/mongo-driver/mongo"
+// 	"go.mongodb.org/mongo-driver/mongo/options"
+// 	"golang.org/x/crypto/bcrypt"
+// )
 
-		log.Println("📩 Received:", msg)
+// var jwtSecret = []byte("secret")
 
-		switch msg.Type {
+// var mongoClient *mongo.Client
+// var userCollection *mongo.Collection
+// var messageCollection *mongo.Collection
 
-		case "login":
-			handleLogin(ws, msg)
+// var upgrader = websocket.Upgrader{
+// 	CheckOrigin: func(r *http.Request) bool {
+// 		return true
+// 	},
+// }
 
-		case "joinRoom":
-			handleJoinRoom(ws, msg)
+// var clients = make(map[*websocket.Conn]string)
+// var rooms = make(map[string]map[*websocket.Conn]bool)
+// var mutex = &sync.Mutex{}
 
-		case "sendMessage":
-			handleSendMessage(ws, msg)
+// type Message struct {
+// 	Type     string `json:"type"`
+// 	RoomID   string `json:"roomId,omitempty"`
+// 	Sender   string `json:"sender,omitempty"`
+// 	Text     string `json:"text,omitempty"`
+// 	IsTyping bool   `json:"isTyping,omitempty"`
+// }
 
-		case "typing":
-			handleTyping(ws, msg)
-		}
-	}
-}
+// type ApiResponse struct {
+// 	Success bool        `json:"success"`
+// 	Message string      `json:"message,omitempty"`
+// 	Data    interface{} `json:"data,omitempty"`
+// }
 
-func handleLogin(ws *websocket.Conn, msg Message) {
-	mutex.Lock()
-	clients[ws] = msg.Sender
-	mutex.Unlock()
+// func main() {
+// 	initMongo()
 
-	sendUserList()
-}
+// 	http.HandleFunc("/register", registerHandler)
+// 	http.HandleFunc("/login", loginHandler)
+// 	http.HandleFunc("/messages", jwtMiddleware(getMessagesHandler))
+// 	http.HandleFunc("/ws", wsHandler)
 
-func handleJoinRoom(ws *websocket.Conn, msg Message) {
-	mutex.Lock()
+// 	log.Println("🚀 Server running on :3000")
+// 	log.Fatal(http.ListenAndServe(":3000", nil))
+// }
 
-	if rooms[msg.RoomID] == nil {
-		rooms[msg.RoomID] = make(map[*websocket.Conn]bool)
-	}
+// func initMongo() {
+// 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+// 	defer cancel()
 
-	rooms[msg.RoomID][ws] = true
+// 	client, err := mongo.Connect(ctx, options.Client().ApplyURI("mongodb://localhost:27017"))
+// 	if err != nil {
+// 		panic(err)
+// 	}
 
-	log.Println("👥 Room:", msg.RoomID, "Members:", len(rooms[msg.RoomID]))
+// 	mongoClient = client
+// 	userCollection = client.Database("chat").Collection("users")
+// 	messageCollection = client.Database("chat").Collection("messages")
 
-	mutex.Unlock()
-}
+// 	log.Println("✅ MongoDB connected")
+// }
 
-func handleSendMessage(ws *websocket.Conn, msg Message) {
-	mutex.Lock()
+// func writeJSON(w http.ResponseWriter, status int, response ApiResponse) {
+// 	w.Header().Set("Content-Type", "application/json")
+// 	w.WriteHeader(status)
+// 	json.NewEncoder(w).Encode(response)
+// }
 
-	// 🔥 pastikan room ada
-	if rooms[msg.RoomID] == nil {
-		rooms[msg.RoomID] = make(map[*websocket.Conn]bool)
-	}
+// func registerHandler(w http.ResponseWriter, r *http.Request) {
 
-	// 🔥 pastikan sender ada di room
-	rooms[msg.RoomID][ws] = true
+// 	var data map[string]string
+// 	json.NewDecoder(r.Body).Decode(&data)
 
-	room := rooms[msg.RoomID]
+// 	hashedPassword, _ := bcrypt.GenerateFromPassword([]byte(data["password"]), bcrypt.DefaultCost)
 
-	mutex.Unlock()
+// 	user := bson.M{
+// 		"username":  data["username"],
+// 		"password":  string(hashedPassword),
+// 		"createdAt": time.Now(),
+// 	}
 
-	msg.Type = "newMessage"
+// 	_, err := userCollection.InsertOne(context.Background(), user)
+// 	if err != nil {
+// 		writeJSON(w, 400, ApiResponse{
+// 			Success: false,
+// 			Message: "User already exists",
+// 		})
+// 		return
+// 	}
 
-	data, _ := json.Marshal(msg)
+// 	writeJSON(w, 200, ApiResponse{
+// 		Success: true,
+// 		Message: "Register success",
+// 	})
+// }
 
-	log.Println("📢 Broadcasting to room:", msg.RoomID, "Members:", len(room))
+// func loginHandler(w http.ResponseWriter, r *http.Request) {
 
-	for client := range room {
-		err := client.WriteMessage(websocket.TextMessage, data)
-		if err != nil {
-			log.Println("Write error:", err)
-		}
-	}
-}
+// 	var data map[string]string
+// 	if err := json.NewDecoder(r.Body).Decode(&data); err != nil {
+// 		writeJSON(w, 400, ApiResponse{
+// 			Success: false,
+// 			Message: "Invalid request body",
+// 		})
+// 		return
+// 	}
 
-func removeClient(ws *websocket.Conn) {
-	mutex.Lock()
+// 	var user bson.M
+// 	err := userCollection.FindOne(context.Background(),
+// 		bson.M{"username": data["username"]}).Decode(&user)
 
-	// hapus dari clients
-	delete(clients, ws)
+// 	if err != nil {
+// 		writeJSON(w, 400, ApiResponse{
+// 			Success: false,
+// 			Message: "User not found",
+// 		})
+// 		return
+// 	}
 
-	// hapus dari semua rooms
-	for roomID := range rooms {
-		delete(rooms[roomID], ws)
+// 	err = bcrypt.CompareHashAndPassword(
+// 		[]byte(user["password"].(string)),
+// 		[]byte(data["password"]),
+// 	)
 
-		if len(rooms[roomID]) == 0 {
-			delete(rooms, roomID)
-		}
-	}
+// 	if err != nil {
+// 		writeJSON(w, 400, ApiResponse{
+// 			Success: false,
+// 			Message: "Wrong password",
+// 		})
+// 		return
+// 	}
 
-	mutex.Unlock()
+// 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+// 		"username": data["username"],
+// 		"exp":      time.Now().Add(24 * time.Hour).Unix(),
+// 	})
 
-	sendUserList()
-}
+// 	tokenString, _ := token.SignedString(jwtSecret)
 
-func sendUserList() {
-	mutex.Lock()
+// 	writeJSON(w, 200, ApiResponse{
+// 		Success: true,
+// 		Data: map[string]string{
+// 			"token": tokenString,
+// 		},
+// 	})
+// }
 
-	var userList []string
-	var clientList []*websocket.Conn
+// func jwtMiddleware(next http.HandlerFunc) http.HandlerFunc {
+// 	return func(w http.ResponseWriter, r *http.Request) {
+// 		tokenString := r.Header.Get("Authorization")
+// 		if tokenString == "" {
+// 			http.Error(w, "Unauthorized", 401)
+// 			return
+// 		}
 
-	for client, username := range clients {
-		userList = append(userList, username)
-		clientList = append(clientList, client)
-	}
+// 		token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+// 			return jwtSecret, nil
+// 		})
 
-	mutex.Unlock()
+// 		if err != nil || !token.Valid {
+// 			http.Error(w, "Invalid token", 401)
+// 			return
+// 		}
 
-	data, _ := json.Marshal(map[string]interface{}{
-		"type":  "userList",
-		"users": userList,
-	})
+// 		next(w, r)
+// 	}
+// }
 
-	for _, client := range clientList {
-		err := client.WriteMessage(websocket.TextMessage, data)
-		if err != nil {
-			log.Println("UserList send error:", err)
-		}
-	}
-}
+// func getMessagesHandler(w http.ResponseWriter, r *http.Request) {
 
-func handleTyping(ws *websocket.Conn, msg Message) {
-	mutex.Lock()
-	room := rooms[msg.RoomID]
-	mutex.Unlock()
+// 	roomID := r.URL.Query().Get("roomId")
 
-	if room == nil {
-		return
-	}
+// 	cursor, err := messageCollection.Find(
+// 		context.Background(),
+// 		bson.M{"roomId": roomID},
+// 		options.Find().SetSort(bson.M{"createdAt": 1}),
+// 	)
 
-	data, _ := json.Marshal(msg)
+// 	if err != nil {
+// 		writeJSON(w, 500, ApiResponse{
+// 			Success: false,
+// 			Message: "Failed to fetch messages",
+// 		})
+// 		return
+// 	}
 
-	for client := range room {
-		if client != ws {
-			client.WriteMessage(websocket.TextMessage, data)
-		}
-	}
-}
+// 	var messages []bson.M
+// 	cursor.All(context.Background(), &messages)
+
+// 	writeJSON(w, 200, ApiResponse{
+// 		Success: true,
+// 		Data:    messages,
+// 	})
+// }
