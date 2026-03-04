@@ -66,7 +66,7 @@ func HandleMessage(ws *websocket.Conn, msg models.Message) {
 
 		SaveMessage(msg)
 		BroadcastToRoom(msg)
-
+		BroadcastToFriendList(msg)
 	}
 }
 
@@ -135,4 +135,19 @@ func SendOnlineUsers(ws *websocket.Conn) {
 		"type":  "online_users",
 		"users": users,
 	})
+}
+
+// ================= BROADCAST TO FRIEND LIST =================
+func BroadcastToFriendList(msg models.Message) {
+	Mutex.RLock()
+	defer Mutex.RUnlock()
+
+	for client, username := range Clients {
+		if username == msg.Receiver {
+			// tambahkan type: newMessage
+			sendMsg := msg
+			sendMsg.Type = "newMessage"
+			client.WriteJSON(sendMsg)
+		}
+	}
 }
