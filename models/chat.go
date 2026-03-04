@@ -6,9 +6,9 @@ import (
 
 type Chat struct {
 	ID        primitive.ObjectID `bson:"_id,omitempty" json:"id"`
+	RoomId    string             `bson:"roomId" json:"roomId"`
 	Sender    string             `bson:"sender" json:"sender"`
-	Receiver  string             `bson:"receiver" json:"receiver"`
-	Message   string             `bson:"message" json:"message"`
+	Text      string             `bson:"text" json:"text"`
+	CreatedAt primitive.DateTime `bson:"createdAt" json:"createdAt"`
 	IsRead    *bool              `bson:"is_read,omitempty" json:"is_read"`
-	CreatedAt primitive.DateTime `bson:"created_at" json:"created_at"`
 }
