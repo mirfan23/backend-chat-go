@@ -78,7 +78,7 @@ func GetChatList(w http.ResponseWriter, r *http.Request) {
 			LastMessage:     lastMsg.Text,
 			LastMessageTime: lastMsg.CreatedAt.Time(),
 			LastSender:      lastMsg.Sender,
-			IsOnline:        false, // sementara false dulu
+			IsOnline:        IsUserOnline(friend),
 		})
 	}
 

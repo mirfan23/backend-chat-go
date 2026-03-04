@@ -46,8 +46,26 @@ func WsHandler(w http.ResponseWriter, r *http.Request) {
 
 	services.AddClient(ws, username)
 
+	services.Mutex.Lock()
+	services.OnlineUsers[username]++
+	services.Mutex.Unlock()
+
+	services.BroadcastUserStatus(username, true)
+	services.SendOnlineUsers(ws)
+
 	defer func() {
 		services.RemoveClient(ws)
+
+		services.Mutex.Lock()
+		services.OnlineUsers[username]--
+		if services.OnlineUsers[username] <= 0 {
+			delete(services.OnlineUsers, username)
+			services.Mutex.Unlock()
+			services.BroadcastUserStatus(username, false)
+		} else {
+			services.Mutex.Unlock()
+		}
+
 		ws.Close()
 	}()
 

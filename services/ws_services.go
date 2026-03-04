@@ -15,6 +15,7 @@ import (
 
 var Clients = make(map[*websocket.Conn]string)
 var Rooms = make(map[string]map[*websocket.Conn]bool)
+var OnlineUsers = make(map[string]int)
 var Mutex sync.RWMutex
 
 // ================= CLIENT =================
@@ -65,6 +66,7 @@ func HandleMessage(ws *websocket.Conn, msg models.Message) {
 
 		SaveMessage(msg)
 		BroadcastToRoom(msg)
+
 	}
 }
 
@@ -99,4 +101,38 @@ func BroadcastToRoom(msg models.Message) {
 	for client := range room {
 		client.WriteJSON(msg)
 	}
+}
+
+// ================= BROADCAST USER STATUS =================
+func BroadcastUserStatus(username string, isOnline bool) {
+
+	Mutex.RLock()
+	defer Mutex.RUnlock()
+
+	message := map[string]interface{}{
+		"type":     "user_status",
+		"username": username,
+		"isOnline": isOnline,
+	}
+
+	for client := range Clients {
+		client.WriteJSON(message)
+	}
+}
+
+// ================= SEND ONLINE USERS =================
+func SendOnlineUsers(ws *websocket.Conn) {
+
+	Mutex.RLock()
+	defer Mutex.RUnlock()
+
+	var users []string
+	for user := range OnlineUsers {
+		users = append(users, user)
+	}
+
+	ws.WriteJSON(map[string]interface{}{
+		"type":  "online_users",
+		"users": users,
+	})
 }
