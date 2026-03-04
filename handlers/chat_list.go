@@ -2,77 +2,97 @@ package handlers
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
-	"strings"
 	"time"
 
 	"backend-chat-go/config"
-	"backend-chat-go/utils"
+	"backend-chat-go/models"
 
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/mongo"
 )
 
-type ChatList struct {
-	RoomID          string    `json:"roomId"`
-	Friend          string    `json:"friend"`
-	LastMessage     string    `json:"lastMessage"`
-	LastSender      string    `json:"lastSender"`
-	LastMessageTime time.Time `json:"lastMessageTime"`
-	IsRead          bool      `json:"isRead"`
-	UnreadCount     int64     `json:"unreadCount"`
-}
+var MessageCollection *mongo.Collection
 
 func GetChatList(w http.ResponseWriter, r *http.Request) {
 
-	user := r.Context().Value("username").(string)
-
-	pipeline := []bson.M{
-		{"$sort": bson.M{"createdAt": -1}},
-		{"$group": bson.M{
-			"_id":           "$roomId",
-			"lastMessage":   bson.M{"$first": "$text"},
-			"lastSender":    bson.M{"$first": "$sender"},
-			"lastCreatedAt": bson.M{"$first": "$createdAt"},
-			"isRead":        bson.M{"$first": "$isRead"},
-		}},
+	usernameVal := r.Context().Value("username")
+	if usernameVal == nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
 	}
 
-	cursor, _ := config.MessageCollection.Aggregate(context.Background(), pipeline)
+	username, ok := usernameVal.(string)
+	if !ok {
+		http.Error(w, "Invalid user context", http.StatusUnauthorized)
+		return
+	}
 
-	var results []bson.M
-	cursor.All(context.Background(), &results)
+	if config.MessageCollection == nil {
+		http.Error(w, "Database not initialized", http.StatusInternalServerError)
+		return
+	}
 
-	var chats []ChatList
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 
-	for _, item := range results {
+	filter := bson.M{
+		"$or": []bson.M{
+			{"sender": username},
+			{"receiver": username},
+		},
+	}
 
-		roomID := item["_id"].(string)
+	cursor, err := config.MessageCollection.Find(ctx, filter)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer cursor.Close(ctx)
 
-		if !strings.Contains(roomID, user) {
-			continue
+	var chats []models.Chat
+	if err := cursor.All(ctx, &chats); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	type ChatResponse struct {
+		ID        string `json:"id"`
+		Sender    string `json:"sender"`
+		Receiver  string `json:"receiver"`
+		Message   string `json:"message"`
+		IsRead    bool   `json:"is_read"`
+		CreatedAt string `json:"created_at"`
+	}
+
+	var response []ChatResponse
+
+	for _, chat := range chats {
+
+		isRead := false
+		if chat.IsRead != nil {
+			isRead = *chat.IsRead
 		}
 
-		friend := utils.ExtractFriend(roomID, user)
-
-		count, _ := config.MessageCollection.CountDocuments(
-			context.Background(),
-			bson.M{
-				"roomId":   roomID,
-				"receiver": user,
-				"isRead":   false,
-			},
-		)
-
-		chats = append(chats, ChatList{
-			RoomID:          roomID,
-			Friend:          friend,
-			LastMessage:     item["lastMessage"].(string),
-			LastSender:      item["lastSender"].(string),
-			LastMessageTime: item["lastCreatedAt"].(time.Time),
-			IsRead:          item["isRead"].(bool),
-			UnreadCount:     count,
+		response = append(response, ChatResponse{
+			ID:        chat.ID.Hex(),
+			Sender:    chat.Sender,
+			Receiver:  chat.Receiver,
+			Message:   chat.Message,
+			IsRead:    isRead,
+			CreatedAt: chat.CreatedAt.Time().Format(time.RFC3339),
 		})
 	}
 
-	writeJSON(w, 200, "Success", chats)
+	// 🔥 Bungkus dalam JSON object
+	result := map[string]interface{}{
+		"status":  200,
+		"message": "Success",
+		"data":    response,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(result)
 }
