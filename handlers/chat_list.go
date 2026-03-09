@@ -5,29 +5,20 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
-	"time"
 
 	"backend-chat-go/config"
 	"backend-chat-go/models"
+	"backend-chat-go/utils"
 
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-type ChatListResponse struct {
-	RoomId          string    `json:"roomId"`
-	Friend          string    `json:"friend"`
-	LastMessage     string    `json:"lastMessage"`
-	LastMessageTime time.Time `json:"lastMessageTime"`
-	LastSender      string    `json:"lastSender"`
-	IsOnline        bool      `json:"isOnline"`
-}
-
 func GetChatList(w http.ResponseWriter, r *http.Request) {
 
 	username := r.Context().Value("username")
 	if username == nil {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		utils.WriteJSON(w, 401, "Unauthorized", nil)
 		return
 	}
 
@@ -45,7 +36,7 @@ func GetChatList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var chatList []ChatListResponse
+	var chatList []models.ChatListResponse
 
 	for _, rId := range roomIds {
 		roomId := rId.(string)
@@ -61,7 +52,7 @@ func GetChatList(w http.ResponseWriter, r *http.Request) {
 
 		opt := options.FindOne().SetSort(bson.D{{Key: "createdAt", Value: -1}})
 
-		var lastMsg models.Chat
+		var lastMsg models.Message
 		err := config.MessageCollection.FindOne(
 			ctx,
 			bson.M{"roomId": roomId},
@@ -72,20 +63,31 @@ func GetChatList(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		chatList = append(chatList, ChatListResponse{
+		unreadCount, _ := config.MessageCollection.CountDocuments(
+			ctx,
+			bson.M{
+				"roomId":   roomId,
+				"receiver": username.(string),
+				"isRead":   false,
+			},
+		)
+
+		chatList = append(chatList, models.ChatListResponse{
 			RoomId:          roomId,
 			Friend:          friend,
-			LastMessage:     lastMsg.Text,
-			LastMessageTime: lastMsg.CreatedAt.Time(),
+			LastMessage:     lastMsg.Preview,
+			LastMessageTime: lastMsg.CreatedAt,
 			LastSender:      lastMsg.Sender,
 			IsOnline:        IsUserOnline(friend),
+			UnreadCount:     unreadCount,
 		})
+
 	}
 
-	response := map[string]interface{}{
-		"status":  200,
-		"message": "Success",
-		"data":    chatList,
+	response := models.ApiResponse{
+		StatusCode: 200,
+		Message:    "success",
+		Data:       chatList,
 	}
 
 	w.Header().Set("Content-Type", "application/json")

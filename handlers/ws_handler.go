@@ -10,6 +10,7 @@ import (
 	"backend-chat-go/config"
 	"backend-chat-go/models"
 	"backend-chat-go/services"
+	"backend-chat-go/utils"
 )
 
 var upgrader = websocket.Upgrader{
@@ -22,7 +23,7 @@ func WsHandler(w http.ResponseWriter, r *http.Request) {
 
 	tokenString := r.URL.Query().Get("token")
 	if tokenString == "" {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		utils.WriteJSON(w, 401, "Unauthorized", nil)
 		return
 	}
 
@@ -31,7 +32,7 @@ func WsHandler(w http.ResponseWriter, r *http.Request) {
 	})
 
 	if err != nil || !token.Valid {
-		http.Error(w, "Invalid token", http.StatusUnauthorized)
+		utils.WriteJSON(w, 401, "Invalid Token", nil)
 		return
 	}
 

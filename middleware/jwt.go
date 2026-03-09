@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"backend-chat-go/config"
+	"backend-chat-go/utils"
 
 	"github.com/golang-jwt/jwt/v5"
 )
@@ -15,34 +16,43 @@ type Claims struct {
 	jwt.RegisteredClaims
 }
 
+func unauthorized(w http.ResponseWriter, message string) {
+	utils.WriteJSON(w, 401, message, nil)
+}
+
 func JWTMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 
 		authHeader := r.Header.Get("Authorization")
 		if authHeader == "" {
-			http.Error(w, "Missing Authorization header", http.StatusUnauthorized)
+			unauthorized(w, "Missing Authorization header")
 			return
 		}
 
 		parts := strings.Split(authHeader, " ")
 		if len(parts) != 2 || parts[0] != "Bearer" {
-			http.Error(w, "Invalid Authorization format", http.StatusUnauthorized)
+			unauthorized(w, "Invalid Authorization format")
 			return
 		}
 
 		tokenString := parts[1]
 
 		claims := &Claims{}
-		token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
-			return config.JwtSecret, nil
-		})
+		token, err := jwt.ParseWithClaims(
+			tokenString,
+			claims,
+			func(token *jwt.Token) (interface{}, error) {
+				return config.JwtSecret, nil
+			},
+		)
 
 		if err != nil || !token.Valid {
-			http.Error(w, "Invalid token", http.StatusUnauthorized)
+			unauthorized(w, "Token expired or invalid")
 			return
 		}
 
 		ctx := context.WithValue(r.Context(), "username", claims.Username)
+
 		next.ServeHTTP(w, r.WithContext(ctx))
 	}
 }

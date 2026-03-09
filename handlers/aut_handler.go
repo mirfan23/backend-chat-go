@@ -8,6 +8,7 @@ import (
 
 	"backend-chat-go/config"
 	"backend-chat-go/models"
+	"backend-chat-go/utils"
 
 	"github.com/golang-jwt/jwt/v5"
 	"go.mongodb.org/mongo-driver/bson"
@@ -24,28 +25,29 @@ func Register(w http.ResponseWriter, r *http.Request) {
 	user := models.User{
 		Username:  data["username"],
 		Password:  string(hashedPassword),
+		PublicKey: data["publicKey"],
 		CreatedAt: time.Now(),
 	}
 
 	_, err := config.UserCollection.InsertOne(context.Background(), user)
 	if err != nil {
-		writeJSON(w, 400, "User already exists", nil)
+		utils.WriteJSON(w, 400, "User already exists", nil)
 		return
 	}
 
-	writeJSON(w, 200, "Register success", nil)
+	utils.WriteJSON(w, 200, "Register success", nil)
 }
 
 func Login(w http.ResponseWriter, r *http.Request) {
 
 	var data map[string]string
 	if err := json.NewDecoder(r.Body).Decode(&data); err != nil {
-		writeJSON(w, 400, "Invalid request body", nil)
+		utils.WriteJSON(w, 400, "Invalid request body", nil)
 		return
 	}
 
 	if data["username"] == "" || data["password"] == "" {
-		writeJSON(w, 400, "Username and password required", nil)
+		utils.WriteJSON(w, 400, "Username and password required", nil)
 		return
 	}
 
@@ -56,7 +58,7 @@ func Login(w http.ResponseWriter, r *http.Request) {
 	).Decode(&user)
 
 	if err != nil {
-		writeJSON(w, 400, "User not found", nil)
+		utils.WriteJSON(w, 400, "User not found", nil)
 		return
 	}
 
@@ -66,7 +68,7 @@ func Login(w http.ResponseWriter, r *http.Request) {
 	)
 
 	if err != nil {
-		writeJSON(w, 400, "Wrong password", nil)
+		utils.WriteJSON(w, 400, "Wrong password", nil)
 		return
 	}
 
@@ -77,22 +79,11 @@ func Login(w http.ResponseWriter, r *http.Request) {
 
 	tokenString, err := token.SignedString(config.JwtSecret)
 	if err != nil {
-		writeJSON(w, 500, "Failed to generate token", nil)
+		utils.WriteJSON(w, 500, "Failed to generate token", nil)
 		return
 	}
 
-	writeJSON(w, 200, "Login success", map[string]string{
+	utils.WriteJSON(w, 200, "Login success", map[string]string{
 		"token": tokenString,
-	})
-}
-
-func writeJSON(w http.ResponseWriter, status int, message string, data interface{}) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-
-	json.NewEncoder(w).Encode(models.ApiResponse{
-		StatusCode: status,
-		Message:    message,
-		Data:       data,
 	})
 }

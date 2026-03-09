@@ -5,44 +5,36 @@ import (
 	"net/http"
 
 	"backend-chat-go/config"
+	"backend-chat-go/utils"
 
 	"go.mongodb.org/mongo-driver/bson"
 )
 
-// PUT /mark-read?roomId=xxx
-func MarkAsRead(w http.ResponseWriter, r *http.Request) {
+func MarkMessagesRead(w http.ResponseWriter, r *http.Request) {
 
-	roomID := r.URL.Query().Get("roomId")
-	if roomID == "" {
-		writeJSON(w, 400, "roomId required", nil)
-		return
-	}
+	username := r.Context().Value("username")
+	roomId := r.URL.Query().Get("roomId")
 
-	// username dari JWT middleware
-	user := r.Context().Value("username").(string)
-
-	filter := bson.M{
-		"roomId":   roomID,
-		"receiver": user,
-		"isRead":   false,
-	}
-
-	update := bson.M{
-		"$set": bson.M{
-			"isRead": true,
-		},
-	}
+	ctx := context.Background()
 
 	_, err := config.MessageCollection.UpdateMany(
-		context.Background(),
-		filter,
-		update,
+		ctx,
+		bson.M{
+			"roomId":   roomId,
+			"receiver": username.(string),
+			"isRead":   false,
+		},
+		bson.M{
+			"$set": bson.M{
+				"isRead": true,
+			},
+		},
 	)
 
 	if err != nil {
-		writeJSON(w, 500, "Failed update", nil)
+		utils.WriteJSON(w, 500, "Failed update", nil)
 		return
 	}
 
-	writeJSON(w, 200, "Updated", nil)
+	utils.WriteJSON(w, 200, "Updated", nil)
 }

@@ -6,6 +6,7 @@ import (
 
 	"backend-chat-go/config"
 	"backend-chat-go/models"
+	"backend-chat-go/utils"
 
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo/options"
@@ -22,12 +23,12 @@ func GetMessages(w http.ResponseWriter, r *http.Request) {
 	)
 
 	if err != nil {
-		writeJSON(w, 500, "Failed fetch messages", nil)
+		utils.WriteJSON(w, 500, "Failed fetch messages", nil)
 		return
 	}
 
 	var messages []models.Message
 	cursor.All(context.Background(), &messages)
 
-	writeJSON(w, 200, "Success", messages)
+	utils.WriteJSON(w, 200, "Success", messages)
 }
