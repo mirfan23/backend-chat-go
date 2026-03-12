@@ -12,5 +12,6 @@ type Message struct {
 	IV           string    `bson:"iv" json:"iv"`
 	Preview      string    `bson:"preview"`
 	IsRead       bool      `bson:"isRead" json:"isRead"`
+	IsTyping     bool      `json:"isTyping"`
 	CreatedAt    time.Time `bson:"createdAt" json:"createdAt"`
 }

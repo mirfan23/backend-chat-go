@@ -17,6 +17,11 @@ import (
 
 func Register(w http.ResponseWriter, r *http.Request) {
 
+	if r.Method != http.MethodPost {
+		utils.WriteJSON(w, 405, "Method Not Allowed", nil)
+		return
+	}
+
 	var data map[string]string
 	json.NewDecoder(r.Body).Decode(&data)
 
@@ -39,6 +44,11 @@ func Register(w http.ResponseWriter, r *http.Request) {
 }
 
 func Login(w http.ResponseWriter, r *http.Request) {
+
+	if r.Method != http.MethodPost {
+		utils.WriteJSON(w, 405, "Method Not Allowed", nil)
+		return
+	}
 
 	var data map[string]string
 	if err := json.NewDecoder(r.Body).Decode(&data); err != nil {

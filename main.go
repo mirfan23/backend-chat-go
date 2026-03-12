@@ -15,8 +15,8 @@ func main() {
 
 	http.HandleFunc("/register", handlers.Register)
 	http.HandleFunc("/login", handlers.Login)
-	http.HandleFunc("/messages", middleware.JWTMiddleware(handlers.GetMessages))
 	http.HandleFunc("/ws", handlers.WsHandler)
+	http.HandleFunc("/messages", middleware.JWTMiddleware(handlers.GetMessages))
 	http.HandleFunc("/users", middleware.JWTMiddleware(handlers.GetAllUsers))
 	http.HandleFunc("/markRead", middleware.JWTMiddleware(handlers.MarkMessagesRead))
 	http.HandleFunc("/profile", middleware.JWTMiddleware(handlers.GetProfile))
