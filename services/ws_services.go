@@ -8,23 +8,23 @@ import (
 
 	"github.com/gorilla/websocket"
 	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/mongo/options"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 
 	"backend-chat-go/config"
 	"backend-chat-go/models"
 	"backend-chat-go/utils"
 )
 
-var Clients = make(map[*websocket.Conn]string)
+var Clients = make(map[*websocket.Conn]string) // conn -> userId
 var Rooms = make(map[string]map[*websocket.Conn]bool)
-var OnlineUsers = make(map[string]int)
+var OnlineUsers = make(map[string]int) // userId -> connection count
 var Mutex sync.RWMutex
 
 // ================= CLIENT =================
 
-func AddClient(ws *websocket.Conn, username string) {
+func AddClient(ws *websocket.Conn, userId string) {
 	Mutex.Lock()
-	Clients[ws] = username
+	Clients[ws] = userId
 	Mutex.Unlock()
 }
 
@@ -42,9 +42,11 @@ func RemoveClient(ws *websocket.Conn) {
 
 func JoinRoom(ws *websocket.Conn, roomID string) {
 	Mutex.Lock()
+
 	if Rooms[roomID] == nil {
 		Rooms[roomID] = make(map[*websocket.Conn]bool)
 	}
+
 	Rooms[roomID][ws] = true
 	Mutex.Unlock()
 }
@@ -55,8 +57,8 @@ func HandleMessage(ws *websocket.Conn, msg models.Message) {
 
 	log.Println("📩 WS message:", msg.Type)
 
-	username := Clients[ws]
-	msg.Sender = username
+	userId := Clients[ws]
+	msg.Sender = userId
 
 	switch msg.Type {
 
@@ -67,7 +69,7 @@ func HandleMessage(ws *websocket.Conn, msg models.Message) {
 
 		msg.Type = "newMessage"
 		msg.CreatedAt = time.Now()
-		msg.Receiver = utils.ExtractFriend(msg.RoomID, username)
+		msg.Receiver = utils.ExtractFriend(msg.RoomID, userId)
 		msg.IsRead = false
 
 		SaveMessage(msg)
@@ -75,23 +77,87 @@ func HandleMessage(ws *websocket.Conn, msg models.Message) {
 		BroadcastToFriendList(msg)
 
 	case "chatList":
-		log.Println("🔥 chatList requested by", username)
-		SendChatList(ws, username)
+		log.Println("🔥 chatList requested by", userId)
+		SendChatList(ws, userId)
 
 	case "typing":
 		log.Println("⌨️ typing event:", msg.Sender)
 		BroadcastTyping(msg, ws)
+
+	case "readMessage":
+		HandleReadMessage(msg)
+
+	}
+}
+
+// ================= HANDLE READ MESSAGE =================
+func HandleReadMessage(msg models.Message) {
+
+	ctx := context.Background()
+
+	friend := utils.ExtractFriend(msg.RoomID, msg.Sender)
+
+	_, err := config.MessageCollection.UpdateMany(
+		ctx,
+		bson.M{
+			"roomId":   msg.RoomID,
+			"sender":   friend,
+			"receiver": msg.Sender,
+			"isRead":   false,
+		},
+		bson.M{
+			"$set": bson.M{"isRead": true},
+		},
+	)
+
+	if err != nil {
+		log.Println("❌ Read error:", err)
+		return
 	}
 
+	payload := map[string]interface{}{
+		"type":   "messagesRead",
+		"roomId": msg.RoomID,
+		"reader": msg.Sender,
+	}
+
+	BroadcastRoomPayLoad(msg.RoomID, payload)
+	BroadcastToUser(msg.Sender, payload)
+	BroadcastToUser(friend, payload)
+}
+
+func BroadcastToUser(userId string, payload map[string]interface{}) {
+
+	Mutex.RLock()
+	defer Mutex.RUnlock()
+
+	for client, uid := range Clients {
+		if uid == userId {
+			client.WriteJSON(payload)
+		}
+	}
+}
+
+func BroadcastRoomPayLoad(roomId string, payload map[string]interface{}) {
+	Mutex.RLock()
+	room := Rooms[roomId]
+	Mutex.RUnlock()
+
+	if room == nil {
+		return
+	}
+
+	for client := range room {
+		client.WriteJSON(payload)
+	}
 }
 
 // ================= BROADCAST CHAT LIST =================
+func BroadcastChatList(userId string) {
 
-func BroadcastChatList(username string) {
-
-	for client, user := range Clients {
-		if user == username {
-			SendChatList(client, username)
+	for client, uid := range Clients {
+		if uid == userId {
+			SendChatList(client, userId)
 		}
 	}
 }
@@ -110,7 +176,7 @@ func SaveMessage(msg models.Message) {
 	}
 }
 
-// ================= BROADCAST =================
+// ================= BROADCAST MESSAGE =================
 
 func BroadcastMessage(msg models.Message) {
 
@@ -128,14 +194,15 @@ func BroadcastMessage(msg models.Message) {
 }
 
 // ================= BROADCAST USER STATUS =================
-func BroadcastUserStatus(username string, isOnline bool) {
+
+func BroadcastUserStatus(userId string, isOnline bool) {
 
 	Mutex.RLock()
 	defer Mutex.RUnlock()
 
 	message := map[string]interface{}{
 		"type":     "user_status",
-		"username": username,
+		"userId":   userId,
 		"isOnline": isOnline,
 	}
 
@@ -145,12 +212,14 @@ func BroadcastUserStatus(username string, isOnline bool) {
 }
 
 // ================= SEND ONLINE USERS =================
+
 func SendOnlineUsers(ws *websocket.Conn) {
 
 	Mutex.RLock()
 	defer Mutex.RUnlock()
 
 	var users []string
+
 	for user := range OnlineUsers {
 		users = append(users, user)
 	}
@@ -162,77 +231,117 @@ func SendOnlineUsers(ws *websocket.Conn) {
 }
 
 // ================= BROADCAST TO FRIEND LIST =================
+
 func BroadcastToFriendList(msg models.Message) {
+
 	Mutex.RLock()
 	defer Mutex.RUnlock()
 
-	for client, username := range Clients {
-		if username == msg.Receiver {
+	for client, userId := range Clients {
+
+		if userId == msg.Receiver {
+
 			sendMsg := msg
 			sendMsg.Type = "newMessage"
+
 			client.WriteJSON(sendMsg)
 		}
 	}
+
 	BroadcastChatList(msg.Sender)
 	BroadcastChatList(msg.Receiver)
 }
 
 // ================= SEND CHAT LIST =================
-func SendChatList(ws *websocket.Conn, username string) {
+
+func SendChatList(ws *websocket.Conn, userId string) {
+
 	ctx := context.Background()
 
-	filter := bson.M{
-		"roomId": bson.M{
-			"$regex": username,
-		},
+	// pipeline untuk aggregate last message + friend info + unread count
+	pipeline := []bson.M{
+		{"$match": bson.M{
+			"$or": []bson.M{
+				{"sender": userId},
+				{"receiver": userId},
+			},
+		}},
+		{"$sort": bson.M{"createdAt": -1}}, // urutkan newest first
+		{"$group": bson.M{
+			"_id":             "$roomId",
+			"lastMessage":     bson.M{"$first": "$preview"},
+			"lastMessageTime": bson.M{"$first": "$createdAt"},
+			"lastSender":      bson.M{"$first": "$sender"},
+			"lastIsRead":      bson.M{"$first": "$isRead"},
+			"friendId": bson.M{"$first": bson.M{
+				"$cond": []interface{}{
+					bson.M{"$eq": []interface{}{"$sender", userId}},
+					"$receiver",
+					"$sender",
+				},
+			}},
+		}},
 	}
 
-	roomIds, err := config.MessageCollection.Distinct(ctx, "roomId", filter)
+	cursor, err := config.MessageCollection.Aggregate(ctx, pipeline)
 	if err != nil {
+		log.Println("❌ chat list aggregation error:", err)
 		return
 	}
+	defer cursor.Close(ctx)
 
 	var chatList []models.ChatListResponse
 
-	for _, rId := range roomIds {
-		roomId := rId.(string)
+	for cursor.Next(ctx) {
+		var doc struct {
+			RoomID          string             `bson:"_id"`
+			LastMessage     string             `bson:"lastMessage"`
+			LastMessageTime primitive.DateTime `bson:"lastMessageTime"`
+			LastSender      string             `bson:"lastSender"`
+			LastIsRead      bool               `bson:"lastIsRead"`
+			FriendID        string             `bson:"friendId"`
+		}
 
-		opts := options.FindOne().
-			SetSort(bson.D{{Key: "createdAt", Value: -1}})
-
-		var lastMsg models.Message
-
-		err := config.MessageCollection.FindOne(ctx, bson.M{"roomId": roomId}, opts).Decode(&lastMsg)
-
-		if err != nil {
+		if err := cursor.Decode(&doc); err != nil {
+			log.Println("❌ decode chat doc error:", err)
 			continue
 		}
 
-		friend := utils.GetFriendFromRoom(roomId, username)
-
-		unreadFilter := bson.M{
-			"roomId":   roomId,
-			"receiver": username,
-			"isRead":   false,
+		// ambil username friend
+		friendName := doc.FriendID
+		friendObjectID, err := primitive.ObjectIDFromHex(doc.FriendID)
+		if err == nil {
+			var user models.User
+			if err := config.UserCollection.FindOne(ctx, bson.M{"_id": friendObjectID}).Decode(&user); err == nil {
+				friendName = user.Username
+			}
 		}
 
-		unreadCount, _ := config.MessageCollection.CountDocuments(ctx, unreadFilter)
+		// hitung unread messages
+		unreadCount, _ := config.MessageCollection.CountDocuments(ctx, bson.M{
+			"roomId":   doc.RoomID,
+			"receiver": userId,
+			"isRead":   false,
+		})
+
+		isRead := true
+
+		if doc.LastSender == userId {
+			isRead = doc.LastIsRead
+		}
 
 		chatList = append(chatList, models.ChatListResponse{
-			RoomId:          roomId,
-			Friend:          friend,
-			LastMessage:     lastMsg.Preview,
-			LastMessageTime: lastMsg.CreatedAt,
-			LastSender:      lastMsg.Sender,
-			IsOnline:        IsUserOnline(friend),
+			RoomId:          doc.RoomID,
+			Friend:          doc.FriendID,
+			FriendName:      friendName,
+			LastMessage:     doc.LastMessage,
+			LastMessageTime: doc.LastMessageTime.Time(),
+			LastSender:      doc.LastSender,
+			IsOnline:        IsUserOnline(doc.FriendID),
 			UnreadCount:     unreadCount,
+			IsRead:          isRead,
 		})
-		log.Println("roomId:", roomId)
-		log.Println("username:", username)
-		log.Println("friend:", friend)
 	}
-
-	log.Println("📤 sending chat list:", len(chatList))
 
 	ws.WriteJSON(map[string]interface{}{
 		"type": "chatList",
@@ -241,6 +350,7 @@ func SendChatList(ws *websocket.Conn, username string) {
 }
 
 // ================= TYPING =================
+
 func BroadcastTyping(msg models.Message, senderConn *websocket.Conn) {
 
 	Mutex.RLock()

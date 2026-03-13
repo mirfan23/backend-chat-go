@@ -12,6 +12,7 @@ import (
 )
 
 type Claims struct {
+	UserID   string `json:"userId"`
 	Username string `json:"username"`
 	jwt.RegisteredClaims
 }
@@ -51,7 +52,8 @@ func JWTMiddleware(next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 
-		ctx := context.WithValue(r.Context(), "username", claims.Username)
+		ctx := context.WithValue(r.Context(), "userId", claims.UserID)
+		ctx = context.WithValue(ctx, "username", claims.Username)
 
 		next.ServeHTTP(w, r.WithContext(ctx))
 	}

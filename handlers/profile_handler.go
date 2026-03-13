@@ -9,28 +9,34 @@ import (
 	"backend-chat-go/utils"
 
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 func GetProfile(w http.ResponseWriter, r *http.Request) {
-	// username := r.Context().Value("username").(string)
-	username, ok := r.Context().Value("username").(string)
+
+	userId, ok := r.Context().Value("userId").(string)
 	if !ok {
 		utils.WriteJSON(w, 401, "Unauthorized", nil)
 		return
 	}
 
+	objId, err := primitive.ObjectIDFromHex(userId)
+	if err != nil {
+		utils.WriteJSON(w, 400, "Invalid userId", nil)
+		return
+	}
+
 	var user models.User
-	err := config.UserCollection.FindOne(
+
+	err = config.UserCollection.FindOne(
 		context.Background(),
-		bson.M{"username": username},
+		bson.M{"_id": objId},
 	).Decode(&user)
 
 	if err != nil {
-		utils.WriteJSON(w, 400, "User not found", nil)
+		utils.WriteJSON(w, 404, "User not found", nil)
 		return
 	}
 
 	utils.WriteJSON(w, 200, "success", user)
-
-	// json.NewEncoder(w).Encode(response)
 }

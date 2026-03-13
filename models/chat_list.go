@@ -9,5 +9,7 @@ type ChatListResponse struct {
 	LastMessageTime time.Time `json:"lastMessageTime"`
 	LastSender      string    `json:"lastSender"`
 	IsOnline        bool      `json:"isOnline"`
+	IsRead          bool      `json:"isRead"`
 	UnreadCount     int64     `json:"unreadCount"`
+	FriendName      string    `json:"friendName"`
 }

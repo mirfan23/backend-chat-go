@@ -83,6 +83,7 @@ func Login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"userId":   user.ID.Hex(),
 		"username": user.Username,
 		"exp":      time.Now().Add(24 * time.Hour).Unix(),
 	})
@@ -94,6 +95,8 @@ func Login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	utils.WriteJSON(w, 200, "Login success", map[string]string{
-		"token": tokenString,
+		"token":    tokenString,
+		"userId":   user.ID.Hex(),
+		"username": user.Username,
 	})
 }

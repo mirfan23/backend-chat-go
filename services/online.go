@@ -1,9 +1,9 @@
 package services
 
-func IsUserOnline(username string) bool {
+func IsUserOnline(userId string) bool {
 	Mutex.RLock()
 	defer Mutex.RUnlock()
 
-	count, ok := OnlineUsers[username]
+	count, ok := OnlineUsers[userId]
 	return ok && count > 0
 }

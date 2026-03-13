@@ -3,24 +3,24 @@ package handlers
 import "sync"
 
 var (
-	onlineUsers = make(map[string]bool)
+	onlineUsers = make(map[string]bool) // key = userId
 	onlineMutex sync.RWMutex
 )
 
-func SetUserOnline(username string) {
+func SetUserOnline(userId string) {
 	onlineMutex.Lock()
 	defer onlineMutex.Unlock()
-	onlineUsers[username] = true
+	onlineUsers[userId] = true
 }
 
-func SetUserOffline(username string) {
+func SetUserOffline(userId string) {
 	onlineMutex.Lock()
 	defer onlineMutex.Unlock()
-	delete(onlineUsers, username)
+	delete(onlineUsers, userId)
 }
 
-func IsUserOnline(username string) bool {
+func IsUserOnline(userId string) bool {
 	onlineMutex.RLock()
 	defer onlineMutex.RUnlock()
-	return onlineUsers[username]
+	return onlineUsers[userId]
 }

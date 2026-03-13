@@ -17,14 +17,14 @@ func MarkMessagesRead(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	username := r.Context().Value("username")
+	userId := r.Context().Value("userId")
 	roomId := r.URL.Query().Get("roomId")
 
 	ctx := context.Background()
 
 	filter := bson.M{
 		"roomId":   roomId,
-		"receiver": username,
+		"receiver": userId,
 		"isRead":   false,
 	}
 

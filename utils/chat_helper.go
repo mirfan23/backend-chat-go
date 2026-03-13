@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+
+	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 func ExtractFriend(roomID string, currentUser string) string {
@@ -27,4 +29,8 @@ func WriteJSON(w http.ResponseWriter, status int, message string, data interface
 		Message:    message,
 		Data:       data,
 	})
+}
+
+func HexToObjectID(hex string) (primitive.ObjectID, error) {
+	return primitive.ObjectIDFromHex(hex)
 }

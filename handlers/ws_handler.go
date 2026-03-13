@@ -4,13 +4,13 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/golang-jwt/jwt/v5"
-	"github.com/gorilla/websocket"
-
 	"backend-chat-go/config"
 	"backend-chat-go/models"
 	"backend-chat-go/services"
 	"backend-chat-go/utils"
+
+	"github.com/golang-jwt/jwt/v5"
+	"github.com/gorilla/websocket"
 )
 
 var upgrader = websocket.Upgrader{
@@ -36,8 +36,24 @@ func WsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	claims := token.Claims.(jwt.MapClaims)
-	username := claims["username"].(string)
+	// safer claims parsing
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok {
+		utils.WriteJSON(w, 401, "Invalid token claims", nil)
+		return
+	}
+
+	userId, ok := claims["userId"].(string)
+	if !ok {
+		utils.WriteJSON(w, 401, "Invalid userId in token", nil)
+		return
+	}
+
+	username, ok := claims["username"].(string)
+	if !ok {
+		utils.WriteJSON(w, 401, "Invalid username in token", nil)
+		return
+	}
 
 	ws, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -45,35 +61,49 @@ func WsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	services.AddClient(ws, username)
+	log.Println("User connected:", username, "| ID:", userId)
+
+	// register client using userId
+	services.AddClient(ws, userId)
 
 	services.Mutex.Lock()
-	services.OnlineUsers[username]++
+	services.OnlineUsers[userId]++
 	services.Mutex.Unlock()
 
-	services.BroadcastUserStatus(username, true)
+	// broadcast user online
+	services.BroadcastUserStatus(userId, true)
+
+	// send current online users
 	services.SendOnlineUsers(ws)
 
 	defer func() {
+
 		services.RemoveClient(ws)
 
 		services.Mutex.Lock()
-		services.OnlineUsers[username]--
-		if services.OnlineUsers[username] <= 0 {
-			delete(services.OnlineUsers, username)
+		services.OnlineUsers[userId]--
+
+		if services.OnlineUsers[userId] <= 0 {
+			delete(services.OnlineUsers, userId)
 			services.Mutex.Unlock()
-			services.BroadcastUserStatus(username, false)
+
+			// broadcast offline
+			services.BroadcastUserStatus(userId, false)
 		} else {
 			services.Mutex.Unlock()
 		}
+
+		log.Println("User disconnected:", username, "| ID:", userId)
 
 		ws.Close()
 	}()
 
 	for {
 		var msg models.Message
+
 		err := ws.ReadJSON(&msg)
 		if err != nil {
+			log.Println("Read error:", err)
 			break
 		}
 

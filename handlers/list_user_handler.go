@@ -7,19 +7,22 @@ import (
 
 	"backend-chat-go/config"
 	"backend-chat-go/models"
+	"backend-chat-go/services"
 	"backend-chat-go/utils"
 
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 type UserResponse struct {
+	UserId   string `json:"userId"`
 	Username string `json:"username"`
 	IsOnline bool   `json:"isOnline"`
 }
 
 func GetAllUsers(w http.ResponseWriter, r *http.Request) {
 
-	currentUser := r.Context().Value("username")
+	currentUser := r.Context().Value("userId")
 	if currentUser == nil {
 		utils.WriteJSON(w, 401, "Unauthorized", nil)
 		return
@@ -37,19 +40,24 @@ func GetAllUsers(w http.ResponseWriter, r *http.Request) {
 	var users []UserResponse
 
 	for cursor.Next(ctx) {
+
 		var user models.User
+
 		if err := cursor.Decode(&user); err != nil {
 			continue
 		}
 
+		userId := user.ID.Hex()
+
 		// skip diri sendiri
-		if user.Username == currentUser.(string) {
+		if userId == currentUser.(string) {
 			continue
 		}
 
 		users = append(users, UserResponse{
+			UserId:   userId,
 			Username: user.Username,
-			IsOnline: IsUserOnline(user.Username),
+			IsOnline: services.IsUserOnline(userId),
 		})
 	}
 
@@ -65,17 +73,23 @@ func GetAllUsers(w http.ResponseWriter, r *http.Request) {
 
 func GetUserPublicKey(w http.ResponseWriter, r *http.Request) {
 
-	username := r.Context().Value("username")
-	if username == nil {
+	userId := r.Context().Value("userId")
+	if userId == nil {
 		utils.WriteJSON(w, 401, "Unauthorized", nil)
+		return
+	}
+
+	objId, err := primitive.ObjectIDFromHex(userId.(string))
+	if err != nil {
+		utils.WriteJSON(w, 400, "Invalid userId", nil)
 		return
 	}
 
 	var user models.User
 
-	err := config.UserCollection.FindOne(
+	err = config.UserCollection.FindOne(
 		context.Background(),
-		bson.M{"username": username.(string)},
+		bson.M{"_id": objId},
 	).Decode(&user)
 
 	if err != nil {
