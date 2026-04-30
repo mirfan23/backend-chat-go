@@ -2,26 +2,38 @@ package main
 
 import (
 	"log"
-	"net/http"
 
 	"backend-chat-go/config"
 	"backend-chat-go/handlers"
 	"backend-chat-go/middleware"
+
+	"github.com/gin-gonic/gin"
 )
 
 func main() {
 
 	config.InitMongo()
 
-	http.HandleFunc("/register", handlers.Register)
-	http.HandleFunc("/login", handlers.Login)
-	http.HandleFunc("/messages", middleware.JWTMiddleware(handlers.GetMessages))
-	http.HandleFunc("/ws", handlers.WsHandler)
-	http.HandleFunc("/users", middleware.JWTMiddleware(handlers.GetAllUsers))
-	http.HandleFunc("/markRead", middleware.JWTMiddleware(handlers.MarkMessagesRead))
-	http.HandleFunc("/profile", middleware.JWTMiddleware(handlers.GetProfile))
-	http.HandleFunc("/userPublicKey", middleware.JWTMiddleware(handlers.GetUserPublicKey))
+	r := gin.Default()
+
+	r.POST("/register", handlers.Register)
+	r.POST("/login", handlers.Login)
+
+	r.GET("/ws", handlers.WsHandler)
+
+	auth := r.Group("/")
+	auth.Use(middleware.JWTMiddleware())
+	{
+		auth.GET("/profile", handlers.GetProfile)
+		auth.POST("/updateProfile", handlers.UpdateProfile)
+		auth.GET("/messages", handlers.GetMessages)
+		auth.GET("/users", handlers.GetAllUsers)
+		auth.GET("/userPublicKey", handlers.GetUserPublicKey)
+		auth.GET("/markRead", handlers.MarkMessagesRead)
+	}
+
+	// http.HandleFunc("/ws", handlers.WsHandler)
 
 	log.Println("🚀 Server running on :3000")
-	log.Fatal(http.ListenAndServe(":3000", nil))
+	log.Fatal(r.Run("0.0.0.0:3000"))
 }

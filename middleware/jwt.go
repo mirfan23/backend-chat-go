@@ -1,13 +1,73 @@
+// package middleware
+
+// import (
+// 	"context"
+// 	"net/http"
+// 	"strings"
+
+// 	"backend-chat-go/config"
+// 	"backend-chat-go/utils"
+
+// 	"github.com/golang-jwt/jwt/v5"
+// )
+
+// type Claims struct {
+// 	UserID   string `json:"userId"`
+// 	Username string `json:"username"`
+// 	jwt.RegisteredClaims
+// }
+
+// func unauthorized(w http.ResponseWriter, message string) {
+// 	utils.WriteJSON(w, 401, message, nil)
+// }
+
+// func JWTMiddleware(next http.HandlerFunc) http.HandlerFunc {
+// 	return func(w http.ResponseWriter, r *http.Request) {
+
+// 		authHeader := r.Header.Get("Authorization")
+// 		if authHeader == "" {
+// 			unauthorized(w, "Missing Authorization header")
+// 			return
+// 		}
+
+// 		parts := strings.Split(authHeader, " ")
+// 		if len(parts) != 2 || parts[0] != "Bearer" {
+// 			unauthorized(w, "Invalid Authorization format")
+// 			return
+// 		}
+
+// 		tokenString := parts[1]
+
+// 		claims := &Claims{}
+// 		token, err := jwt.ParseWithClaims(
+// 			tokenString,
+// 			claims,
+// 			func(token *jwt.Token) (interface{}, error) {
+// 				return config.JwtSecret, nil
+// 			},
+// 		)
+
+// 		if err != nil || !token.Valid {
+// 			unauthorized(w, "Token expired or invalid")
+// 			return
+// 		}
+
+// 		ctx := context.WithValue(r.Context(), "userId", claims.UserID)
+// 		ctx = context.WithValue(ctx, "username", claims.Username)
+
+// 		next.ServeHTTP(w, r.WithContext(ctx))
+// 	}
+// }
+
 package middleware
 
 import (
-	"context"
 	"net/http"
 	"strings"
 
 	"backend-chat-go/config"
-	"backend-chat-go/utils"
 
+	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 )
 
@@ -17,28 +77,34 @@ type Claims struct {
 	jwt.RegisteredClaims
 }
 
-func unauthorized(w http.ResponseWriter, message string) {
-	utils.WriteJSON(w, 401, message, nil)
-}
+func JWTMiddleware() gin.HandlerFunc {
 
-func JWTMiddleware(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
+	return func(c *gin.Context) {
 
-		authHeader := r.Header.Get("Authorization")
+		authHeader := c.GetHeader("Authorization")
+
 		if authHeader == "" {
-			unauthorized(w, "Missing Authorization header")
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"message": "Missing Authorization header",
+			})
+			c.Abort()
 			return
 		}
 
 		parts := strings.Split(authHeader, " ")
+
 		if len(parts) != 2 || parts[0] != "Bearer" {
-			unauthorized(w, "Invalid Authorization format")
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"message": "Invalid Authorization format",
+			})
+			c.Abort()
 			return
 		}
 
 		tokenString := parts[1]
 
 		claims := &Claims{}
+
 		token, err := jwt.ParseWithClaims(
 			tokenString,
 			claims,
@@ -48,13 +114,18 @@ func JWTMiddleware(next http.HandlerFunc) http.HandlerFunc {
 		)
 
 		if err != nil || !token.Valid {
-			unauthorized(w, "Token expired or invalid")
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"message": "Token expired or invalid",
+			})
+			c.Abort()
 			return
 		}
 
-		ctx := context.WithValue(r.Context(), "userId", claims.UserID)
-		ctx = context.WithValue(ctx, "username", claims.Username)
+		// simpan ke gin context
+		c.Set("userId", claims.UserID)
+		c.Set("username", claims.Username)
 
-		next.ServeHTTP(w, r.WithContext(ctx))
+		// lanjut ke handler berikutnya
+		c.Next()
 	}
 }

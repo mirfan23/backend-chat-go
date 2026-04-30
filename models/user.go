@@ -11,5 +11,6 @@ type User struct {
 	Username  string             `bson:"username" json:"username"`
 	Password  string             `bson:"password" json:"-"`
 	PublicKey string             `bson:"publicKey" json:"publicKey"`
+	Photo     string             `bson:"photo" json:"photo"`
 	CreatedAt time.Time          `bson:"createdAt" json:"createdAt"`
 }
